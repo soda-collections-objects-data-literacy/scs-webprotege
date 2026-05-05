@@ -20,6 +20,10 @@ import java.util.Optional;
  *   <tr><td>Username claim (optional)</td><td>{@code WEBPROTEGE_OIDC_USERNAME_CLAIM}</td><td>{@code webprotege.oidc.username.claim}</td></tr>
  *   <tr><td>Hide local login (optional)</td><td>{@code WEBPROTEGE_OIDC_HIDE_LOCAL_LOGIN}</td><td>{@code webprotege.oidc.hide.local.login}</td></tr>
  * </table>
+ *
+ * <p>OIDC identities are always linked to a local user record by {@code preferred_username}
+ * (or whatever {@code WEBPROTEGE_OIDC_USERNAME_CLAIM} is set to). Email is never used to pick an
+ * existing account.</p>
  */
 public final class OidcRuntimeConfigLoader {
 

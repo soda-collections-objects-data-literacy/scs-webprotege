@@ -45,8 +45,12 @@ public class OidcSsoUserProvisioner {
     }
 
     @Nonnull
-    public UserId resolveOrProvisionUser(@Nonnull JWTClaimsSet claims, @Nonnull String usernameClaimName) throws ParseException {
-        Optional<String> email = Optional.ofNullable(claims.getStringClaim("email")).map(String::trim).filter(s -> !s.isEmpty());
+    public UserId resolveOrProvisionUser(@Nonnull JWTClaimsSet claims,
+                                         @Nonnull String usernameClaimName) throws ParseException {
+        Optional<String> email = Optional.ofNullable(claims.getStringClaim("email"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty());
+        boolean emailVerified = Boolean.TRUE.equals(claims.getBooleanClaim("email_verified"));
         String sub = Optional.ofNullable(claims.getSubject()).orElse("").trim();
         String rawUsername = claims.getStringClaim(usernameClaimName);
         if (rawUsername == null || rawUsername.trim().isEmpty()) {
@@ -59,43 +63,44 @@ public class OidcSsoUserProvisioner {
         if ("guest".equalsIgnoreCase(candidate)) {
             candidate = "u_" + shortHash(sub);
         }
-        if (email.isPresent()) {
-            Optional<UserRecord> byEmail = userRecordRepository.findOneByEmailAddress(email.get());
-            if (byEmail.isPresent()) {
-                logger.info("OIDC login matched existing user by email {}", email.get());
-                return byEmail.get().getUserId();
-            }
+
+        Optional<UserRecord> byUsername = userRecordRepository.findOne(UserId.getUserId(candidate));
+        if (byUsername.isPresent()) {
+            logger.info("OIDC login matched existing user by username {} (sub={})", candidate, sub);
+            return byUsername.get().getUserId();
         }
-        Optional<UserRecord> byId = userRecordRepository.findOne(UserId.getUserId(candidate));
-        if (byId.isPresent()) {
-            if (email.isPresent() && byId.get().getEmailAddress().equalsIgnoreCase(email.get())) {
-                return byId.get().getUserId();
-            }
-            String alternate = candidate + "_" + shortHash(sub);
-            return createAccountIfMissing(UserId.getUserId(alternate), email, sub);
-        }
-        return createAccountIfMissing(UserId.getUserId(candidate), email, sub);
+
+        return createAccountIfMissing(UserId.getUserId(candidate), email, emailVerified, sub);
     }
 
     @Nonnull
     private UserId createAccountIfMissing(@Nonnull UserId userId,
                                           @Nonnull Optional<String> email,
+                                          boolean emailVerified,
                                           @Nonnull String subKey) {
         if (userRecordRepository.findOne(userId).isPresent()) {
             return userId;
         }
-        String emailStr = email.orElse("");
+        String emailStr = (email.isPresent() && emailVerified) ? email.get() : "";
         Salt salt = randomSalt();
         SaltedPasswordDigest digest = randomDigest();
         try {
             authenticationManager.registerUser(userId, new EmailAddress(emailStr), digest, salt);
-            logger.info("Provisioned WebProtege user {} from OIDC (sub={})", userId.getUserName(), subKey);
+            logger.info("Provisioned WebProtege user {} from OIDC (sub={}, emailVerified={})",
+                    userId.getUserName(), subKey, emailVerified);
             return userId;
         } catch (UserRegistrationException e) {
             if (e instanceof UserEmailAlreadyExistsException && !emailStr.isEmpty()) {
-                return userRecordRepository.findOneByEmailAddress(emailStr)
-                        .map(UserRecord::getUserId)
-                        .orElseThrow(() -> e);
+                UserId fallback = UserId.getUserId(userId.getUserName() + "_" + shortHash(subKey));
+                try {
+                    authenticationManager.registerUser(fallback, new EmailAddress(""), randomDigest(), randomSalt());
+                } catch (UserRegistrationException e2) {
+                    logger.error("Could not provision OIDC user after email conflict", e2);
+                    throw e2;
+                }
+                logger.info("Provisioned WebProtege user {} from OIDC after email conflict on {} (sub={})",
+                        fallback.getUserName(), emailStr, subKey);
+                return fallback;
             }
             UserId fallback = UserId.getUserId(userId.getUserName() + "_" + shortHash(subKey));
             if (userRecordRepository.findOne(fallback).isPresent()) {
