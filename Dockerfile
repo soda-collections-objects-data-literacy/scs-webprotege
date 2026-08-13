@@ -6,12 +6,13 @@ COPY . /webprotege
 
 WORKDIR /webprotege
 
-# Docker build only needs to compile and package. Database-backed checks belong 
-# in CI or local dev (Testcontainers, compose stack, etc.), not necessarily 
-# inside every docker build.
+# Docker build compiles and packages the WAR. Use maven.test.skip so tests
+# are neither compiled nor run (-DskipTests still runs testCompile).
+# Database-backed checks belong in CI or local dev (Testcontainers, compose
+# stack, etc.), not inside every docker build.
 # @todo Use Testcontainers for that.
 
-RUN mvn -B -DskipTests clean package
+RUN mvn -B -Dmaven.test.skip=true clean package
 
 FROM tomcat:8-jre11-slim
 
