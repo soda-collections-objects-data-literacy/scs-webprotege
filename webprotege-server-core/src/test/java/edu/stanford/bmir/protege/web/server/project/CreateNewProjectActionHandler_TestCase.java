@@ -11,6 +11,8 @@ import edu.stanford.bmir.protege.web.server.dispatch.RequestValidator;
 import edu.stanford.bmir.protege.web.server.sharing.ProjectSharingSettingsManager;
 import edu.stanford.bmir.protege.web.shared.access.ActionId;
 import edu.stanford.bmir.protege.web.shared.access.BuiltInAction;
+import edu.stanford.bmir.protege.web.shared.access.BuiltInRole;
+import edu.stanford.bmir.protege.web.shared.access.RoleId;
 import edu.stanford.bmir.protege.web.shared.app.UserInSession;
 import edu.stanford.bmir.protege.web.shared.lang.DefaultDisplayNameSettingsFactory;
 import edu.stanford.bmir.protege.web.shared.permissions.PermissionDeniedException;
@@ -22,11 +24,15 @@ import edu.stanford.bmir.protege.web.shared.user.UserId;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 
+import java.util.Collection;
+
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.*;
 
@@ -143,5 +149,32 @@ public class CreateNewProjectActionHandler_TestCase {
         RequestValidator validator = handler.getRequestValidator(action, requestContext);
         RequestValidationResult validationResult = validator.validateAction();
         assertThat(validationResult.isValid(), is(false));
+    }
+
+    @Test
+    public void shouldGrantManageToCallerAndProjectOwner() {
+        executeCreateNewProject();
+        ArgumentCaptor<Subject> subjectCaptor = ArgumentCaptor.forClass(Subject.class);
+        verify(accessManager, atLeast(1)).setAssignedRoles(
+                subjectCaptor.capture(),
+                any(Resource.class),
+                any(Collection.class));
+        assertThat(subjectCaptor.getAllValues(), hasItems(
+                Subject.forUser(userId),
+                Subject.forUser(UserId.getUserId("The Owner"))));
+    }
+
+    @Test
+    public void shouldGrantManageRolesToProjectOwner() {
+        executeCreateNewProject();
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<RoleId>> rolesCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(accessManager).setAssignedRoles(
+                eq(Subject.forUser(UserId.getUserId("The Owner"))),
+                any(Resource.class),
+                rolesCaptor.capture());
+        Collection<RoleId> roles = rolesCaptor.getValue();
+        assertThat(roles.contains(BuiltInRole.CAN_MANAGE.getRoleId()), is(true));
+        assertThat(roles.contains(BuiltInRole.PROJECT_DOWNLOADER.getRoleId()), is(true));
     }
 }

@@ -97,7 +97,7 @@ public class CreateNewProjectActionHandler implements ApplicationActionHandler<C
             ProjectId projectId = pm.createNewProject(newProjectSettings);
             if (!projectDetailsManager.isExistingProject(projectId)) {
                 projectDetailsManager.registerProject(projectId, newProjectSettings);
-                applyDefaultPermissions(projectId, userId);
+                applyDefaultPermissions(projectId, userId, newProjectSettings.getProjectOwner());
             }
             return new CreateNewProjectResult(projectDetailsManager.getProjectDetails(projectId));
         } catch (OWLOntologyCreationException | OWLOntologyStorageException | IOException e) {
@@ -105,12 +105,20 @@ public class CreateNewProjectActionHandler implements ApplicationActionHandler<C
         }
     }
 
-    private void applyDefaultPermissions(ProjectId projectId, UserId userId) {
+    private void applyDefaultPermissions(ProjectId projectId, UserId callerId, UserId projectOwner) {
         ProjectResource projectResource = new ProjectResource(projectId);
-        // Owner is manager
-        accessManager.setAssignedRoles(forUser(userId),
+        // The caller (API-key user or signed-in creator) can manage the project.
+        accessManager.setAssignedRoles(forUser(callerId),
                                        projectResource,
                                        asList(CAN_MANAGE.getRoleId(), PROJECT_DOWNLOADER.getRoleId()));
+        // When a service account creates a project for another owner, that owner
+        // must also be able to open and manage it. UserId is a string match;
+        // the owner does not need a local account yet.
+        if (!callerId.equals(projectOwner) && !projectOwner.isGuest()) {
+            accessManager.setAssignedRoles(forUser(projectOwner),
+                                           projectResource,
+                                           asList(CAN_MANAGE.getRoleId(), PROJECT_DOWNLOADER.getRoleId()));
+        }
         // Any signed in user can edit the layout
         accessManager.setAssignedRoles(forAnySignedInUser(),
                                        projectResource,
