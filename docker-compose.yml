@@ -1,24 +1,21 @@
-version: "3"
-
 services:
-
-  wpmongo:
-    container_name: webprotege-mongodb
+  webprotege--mongodb--db:
+    container_name: webprotege--mongodb--db
     image: mongo:4.1-bionic
     restart: unless-stopped
-    volumes: 
+    volumes:
       - ./.protegedata/mongodb:/data/db
 
-  webprotege:
-    container_name: webprotege
+  webprotege--webprotege--app:
+    container_name: webprotege--webprotege--app
     image: protegeproject/webprotege
     depends_on:
-      - wpmongo
+      - webprotege--mongodb--db
     restart: unless-stopped
     environment:
+      # Soak: keep Today DNS via alias on mongodb until cutover.
       - webprotege.mongodb.host=wpmongo
-    volumes: 
-    - ./.protegedata/protege:/srv/webprotege
+    volumes:
+      - ./.protegedata/protege:/srv/webprotege
     ports:
       - 5000:8080
-
