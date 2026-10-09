@@ -17,6 +17,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.text.ParseException;
+import java.util.regex.Pattern;
 
 /**
  * OIDC authorization code flow entry points for Keycloak (or compatible IdPs).
@@ -29,6 +30,21 @@ import java.text.ParseException;
 public class OidcAuthServlet extends HttpServlet {
 
     private static final Logger logger = LoggerFactory.getLogger(OidcAuthServlet.class);
+
+    /**
+     * Query parameter of the login endpoint naming the place to open after sign-in.
+     * Hash fragments never reach the server, so SCS Manager deep links pass the
+     * target here, e.g. {@code ?return_to=projects/<uuid>/perspectives/<uuid>}.
+     */
+    static final String RETURN_TO_PARAMETER = "return_to";
+
+    private static final String SESSION_RETURN_TO = "webprotege.oidc.return_to";
+
+    private static final String UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+
+    /** Only project places are accepted, so the parameter cannot redirect elsewhere. */
+    private static final Pattern RETURN_TO_PATTERN = Pattern.compile(
+            "projects/list|projects/" + UUID + "(/perspectives/" + UUID + ")?");
 
     @Nonnull
     private final OidcRuntimeConfig config;
@@ -67,6 +83,18 @@ public class OidcAuthServlet extends HttpServlet {
     }
 
     private void handleLogin(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        String returnTo = validReturnTo(req.getParameter(RETURN_TO_PARAMETER));
+        // Already signed in: open the requested place without another IdP round trip.
+        if (returnTo != null && !new WebProtegeSessionImpl(req.getSession()).getUserInSession().isGuest()) {
+            resp.sendRedirect(landing(req, returnTo));
+            return;
+        }
+        if (returnTo != null) {
+            req.getSession().setAttribute(SESSION_RETURN_TO, returnTo);
+        }
+        else {
+            req.getSession().removeAttribute(SESSION_RETURN_TO);
+        }
         String callbackUrl = OidcRedirectUriResolver.callbackUrl(req, config);
         try {
             String location = coordinator.buildAuthorizationRedirectUrl(req.getSession(), callbackUrl);
@@ -104,7 +132,24 @@ public class OidcAuthServlet extends HttpServlet {
 
     @Nonnull
     private static String successLanding(HttpServletRequest req) {
-        return req.getContextPath() + "/WebProtege.jsp";
+        Object returnTo = req.getSession().getAttribute(SESSION_RETURN_TO);
+        req.getSession().removeAttribute(SESSION_RETURN_TO);
+        return landing(req, returnTo instanceof String ? validReturnTo((String) returnTo) : null);
+    }
+
+    @Nonnull
+    private static String landing(HttpServletRequest req, String returnTo) {
+        String landing = req.getContextPath() + "/WebProtege.jsp";
+        return returnTo != null ? landing + "#" + returnTo : landing;
+    }
+
+    /** Returns the place token when it is an allowed project place, otherwise null. */
+    static String validReturnTo(String returnTo) {
+        if (returnTo == null) {
+            return null;
+        }
+        String token = returnTo.startsWith("#") ? returnTo.substring(1) : returnTo;
+        return RETURN_TO_PATTERN.matcher(token).matches() ? token : null;
     }
 
     @Nonnull
