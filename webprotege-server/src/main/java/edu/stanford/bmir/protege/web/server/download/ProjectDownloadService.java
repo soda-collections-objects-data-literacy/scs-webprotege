@@ -103,6 +103,25 @@ public class ProjectDownloadService {
                              response);
     }
 
+    /**
+     * Creates the zipped download of a revision if needed and returns its path.
+     * The REST API streams the file itself instead of using the servlet response.
+     *
+     * @return the cached zip file, or empty if it could not be created
+     */
+    @Nonnull
+    public Optional<Path> prepareDownload(@Nonnull UserId requester,
+                                          @Nonnull ProjectId projectId,
+                                          @Nonnull RevisionNumber revisionNumber,
+                                          @Nonnull DownloadFormat downloadFormat) throws IOException {
+        RevisionNumber realRevisionNumber = revisionNumber.isHead()
+                ? getHeadRevisionNumber(projectId, requester)
+                : revisionNumber;
+        Path downloadPath = projectDownloadCache.getCachedDownloadPath(projectId, realRevisionNumber, downloadFormat);
+        createDownloadIfNecessary(requester, projectId, revisionNumber, downloadFormat, downloadPath);
+        return Files.exists(downloadPath) ? Optional.of(downloadPath) : Optional.empty();
+    }
+
     private void createDownloadIfNecessary(@Nonnull UserId requester,
                                            @Nonnull ProjectId projectId,
                                            @Nonnull RevisionNumber revisionNumber,
