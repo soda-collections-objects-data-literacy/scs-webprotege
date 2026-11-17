@@ -707,7 +707,9 @@ public class ProjectActionHandlersModule {
     public ProjectActionHandler provideResetPerspectivesActionHandler(ResetPerspectivesActionHandler handler) {
         return handler;
     }
-    public ProjectActionHandler providesExistingOntologyMergeAddActionHandler(ExistingOntologyMergeAddActionHandler handler){
+
+    @Provides @IntoSet
+    public ProjectActionHandler provideExistingOntologyMergeAddActionHandler(ExistingOntologyMergeAddActionHandler handler) {
         return handler;
     }
 }
